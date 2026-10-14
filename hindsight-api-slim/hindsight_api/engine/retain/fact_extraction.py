@@ -3184,12 +3184,11 @@ async def extract_facts_from_contents_batch_api(
             )
             logger.error(message)
             extraction_errors.add(message)
-            chunks_metadata.append(
-                ChunkMetadata(
-                    chunk_text=chunk_content, fact_count=0, content_index=content_index, chunk_index=chunk_idx
-                )
-            )
-            continue
+            # An invalid envelope is not an explicit empty extraction. Returning
+            # a zero-fact chunk would allow document replacement to delete prior
+            # memories. Persist safe diagnostics, then abort before storage runs.
+            await _write_batch_extraction_errors(pool, operation_id, schema, extraction_errors)
+            raise RuntimeError(message)
 
         # Parse facts (reuse existing logic from _extract_facts_from_chunk)
         raw_facts = extraction_response_json["facts"]

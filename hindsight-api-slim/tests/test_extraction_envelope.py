@@ -91,7 +91,7 @@ async def test_corrected_envelope_succeeds_on_retry(response):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("response", BAD_ENVELOPES)
-async def test_batch_invalid_envelope_records_extraction_error(response):
+async def test_batch_invalid_envelope_fails_before_returning_empty_result(response):
     impl = AsyncMock()
     impl.model = "synthetic-model"
     impl.provider = "openai"
@@ -117,12 +117,12 @@ async def test_batch_invalid_envelope_records_extraction_error(response):
     with patch(
         "hindsight_api.engine.retain.fact_extraction._write_batch_extraction_errors", new_callable=AsyncMock
     ) as write:
-        result = await extract_facts_from_contents_batch_api(
-            contents=[RetainContent(content="Alice works at Acme.")],
-            llm_config=llm,
-            config=config(),
-        )
-    assert result.facts == []
+        with pytest.raises(RuntimeError, match="invalid extraction envelope"):
+            await extract_facts_from_contents_batch_api(
+                contents=[RetainContent(content="Alice works at Acme.")],
+                llm_config=llm,
+                config=config(),
+            )
     errors = write.call_args.args[3]
     assert errors.count == 1
     assert "facts" in errors.sample[0]

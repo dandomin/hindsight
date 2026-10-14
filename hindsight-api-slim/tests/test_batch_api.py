@@ -289,7 +289,7 @@ async def test_batch_api_accepts_top_level_fact_list(mock_llm_config, test_conte
 
 @pytest.mark.asyncio
 async def test_batch_api_rejects_top_level_non_fact_list(mock_llm_config, test_contents, hindsight_config):
-    """Batch extraction records malformed top-level lists instead of crashing."""
+    """Malformed lists must not become destructive empty replacements."""
     batch_id = "batch_malformed_list"
     mock_llm_config._provider_impl.supports_batch_api = AsyncMock(return_value=True)
     mock_llm_config._provider_impl.submit_batch = AsyncMock(return_value={"batch_id": batch_id})
@@ -310,22 +310,15 @@ async def test_batch_api_rejects_top_level_non_fact_list(mock_llm_config, test_c
         ]
     )
 
-    extraction = await extract_facts_from_contents_batch_api(
-        contents=[test_contents[0]],
-        llm_config=mock_llm_config,
-        config=hindsight_config,
-        pool=None,
-        operation_id=None,
-        schema=None,
-    )
-    facts = extraction.facts
-    chunks = extraction.chunks
-    usage = extraction.usage
-
-    assert facts == []
-    assert len(chunks) == 1
-    assert chunks[0].fact_count == 0
-    assert usage.total_tokens == 0
+    with pytest.raises(RuntimeError, match="invalid extraction envelope"):
+        await extract_facts_from_contents_batch_api(
+            contents=[test_contents[0]],
+            llm_config=mock_llm_config,
+            config=hindsight_config,
+            pool=None,
+            operation_id=None,
+            schema=None,
+        )
 
 
 @pytest.mark.asyncio
