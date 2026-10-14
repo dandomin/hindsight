@@ -2004,7 +2004,7 @@ def _shape_repair_message(observed_keys: Collection[str], expected_keys: Sequenc
 def _coerce_fact_response(response: Any) -> dict[str, Any] | None:
     """Accept the schema wrapper, or a recoverable top-level facts array."""
     if isinstance(response, dict):
-        return response
+        return response if isinstance(response.get("facts"), list) else None
     if isinstance(response, list) and all(isinstance(item, dict) for item in response):
         return {"facts": response}
     return None
@@ -2168,9 +2168,18 @@ async def _extract_facts_from_chunk(
             # Handle malformed LLM responses
             coerced_response_json = _coerce_fact_response(extraction_response_json)
             if coerced_response_json is None:
+                reason = (
+                    "invalid extraction envelope" if isinstance(extraction_response_json, dict) else "non-dict JSON"
+                )
+                repair_hint = (
+                    'Your previous answer was discarded. Return a JSON object with a top-level "facts" list, '
+                    'shaped as {"facts": [{...}, {...}]}. Do not nest it inside another wrapper. '
+                    'Use {"facts": []} only when there are no facts to extract.'
+                )
                 if attempt < outer_attempts - 1:
                     logger.warning(
-                        f"LLM returned non-dict JSON on attempt {attempt + 1}/{outer_attempts}: {type(extraction_response_json).__name__}. Retrying..."
+                        f"LLM returned {reason} on attempt {attempt + 1}/{outer_attempts}: "
+                        f"{type(extraction_response_json).__name__}. Expected a top-level 'facts' list. Retrying..."
                     )
                     continue
                 else:
@@ -2179,16 +2188,16 @@ async def _extract_facts_from_chunk(
                     # worker's retry machinery and ultimately fails loudly — never
                     # silently commit the document with 0 facts. See issue #1833.
                     raise RuntimeError(
-                        f"Fact extraction failed: LLM returned non-dict JSON after {outer_attempts} attempts "
-                        f"({type(extraction_response_json).__name__}). Raw: {str(extraction_response_json)[:500]}"
+                        f"Fact extraction failed: LLM returned {reason} after {outer_attempts} attempts "
+                        f"({type(extraction_response_json).__name__}). Expected a top-level 'facts' list."
                     )
             extraction_response_json = coerced_response_json
 
-            raw_facts = extraction_response_json.get("facts", [])
+            raw_facts = extraction_response_json["facts"]
 
             if not raw_facts:
                 logger.debug(
-                    f"LLM response missing 'facts' field or returned empty list. "
+                    f"LLM response returned an explicit empty facts list. "
                     f"Response: {extraction_response_json}. "
                     f"Input: "
                     f"date: {event_date.isoformat() if event_date else 'unset'}, "
@@ -3169,7 +3178,10 @@ async def extract_facts_from_contents_batch_api(
         response_type_name = type(extraction_response_json).__name__
         extraction_response_json = _coerce_fact_response(extraction_response_json)
         if extraction_response_json is None:
-            message = f"{custom_id}: LLM returned non-dict JSON ({response_type_name})"
+            message = (
+                f"{custom_id}: LLM returned an invalid extraction envelope ({response_type_name}); "
+                "expected a top-level 'facts' list"
+            )
             logger.error(message)
             extraction_errors.add(message)
             chunks_metadata.append(
@@ -3180,7 +3192,7 @@ async def extract_facts_from_contents_batch_api(
             continue
 
         # Parse facts (reuse existing logic from _extract_facts_from_chunk)
-        raw_facts = extraction_response_json.get("facts", [])
+        raw_facts = extraction_response_json["facts"]
         chunk_facts = []
 
         for i, llm_fact in enumerate(raw_facts):
