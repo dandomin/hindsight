@@ -120,9 +120,7 @@ async def test_explicit_empty_batch_remains_successful(envelope_memory, request_
     memory = envelope_memory
     bank = f"test-empty-batch-{uuid.uuid4().hex}"
     memory._config_resolver._global_config.retain_batch_enabled = True
-    monkeypatch.setattr(
-        memory._retain_llm_config, "batch_provider_impl", AsyncMock(return_value=batch_impl(response))
-    )
+    monkeypatch.setattr(memory._retain_llm_config, "batch_provider_impl", AsyncMock(return_value=batch_impl(response)))
     try:
         result = await memory.retain_batch_async(
             bank_id=bank,
